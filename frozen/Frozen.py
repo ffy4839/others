@@ -89,6 +89,7 @@ class ser(serial.Serial):
         super(ser, self).__init__()
         self.port = port
         self.open_ser()
+        self.parse_data = None
 
     def open_ser(self):
 
@@ -116,22 +117,35 @@ class ser(serial.Serial):
             inwaiting = self.in_waiting
             if inwaiting:
                 recv = self.read_all()
-                return self.recv_parse(recv)
+                self.recv_parse(recv)
+                return self.parse_data
             time.sleep(1)
 
-    def recv_parse(self, data):
-        try:
-            datas = binascii.hexlify(data).decode('utf-8').upper()
+    def recv_parse(self, data, code='utf-8'):
 
-            re_com = re.compile('68.*16')
-            datas = re.findall(re_com, datas)[0]
+        if code == 'utf-8':
+            try:
+                datas = binascii.hexlify(data).decode('utf-8').upper()
+                re_com = re.compile('68.*16')
+                datas = re.findall(re_com, datas)[0]
+                self.parse_data = datas
+            except:
+                self.recv_parse(data,'ascii')
 
-        except:
+        if code == 'ascii':
             try:
                 datas = data.decode('ascii')
+                self.parse_data = datas
             except:
-                datas = data
-        return datas
+                self.recv_parse(data,'GBK')
+
+        if code == 'GBK':
+            try:
+                datas = data.decode('GBK').replace('\n','').replace('\r','')
+                self.parse_data = datas
+            except:
+                self.parse_data = data
+
 
     def sopen(self):
         if not self.is_open:
@@ -426,4 +440,4 @@ if __name__ == '__main__':
         m.run()
     except Exception as e:
         print(e)
-        time.sleep(60)
+        input('按键退出')
