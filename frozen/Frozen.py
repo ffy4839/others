@@ -9,6 +9,10 @@ import threading
 import serial.tools.list_ports as LP
 
 
+def print_save(data):
+    print(data)
+    save(data)
+
 def get_config(sections):
     data = {}
     config = configparser.ConfigParser()
@@ -25,8 +29,8 @@ def get_config(sections):
         config['configs']['frozen_hour'] = '24'
         config['configs']['frozen_day'] = '3'
         config['configs']['frozen_month'] = '2'
-        config['configs']['interval'] = '20'
-        config['configs']['month_frozen_day'] = 'false'
+        config['configs']['interval'] = '30'
+        config['configs']['month_frozen_day'] = '260000'
         with open(path + 'setConfig.ini', 'w') as f:
             config.write(f)
         input('创建成功')
@@ -78,7 +82,7 @@ class ser(serial.Serial):
         super(ser, self).__init__()
         self.port = port
         self.open_ser()
-        self.parse_data = None
+        self.parse_data = 'recv'
 
     def open_ser(self):
         self.baudrate = BAUDRATE
@@ -98,7 +102,7 @@ class ser(serial.Serial):
         else:
             self.open_ser()
 
-    def recv(self, times=6):
+    def recv(self, times=INTERVAL):
         self.isopened()
         self.flushInput()
         for i in range(times):
@@ -106,8 +110,10 @@ class ser(serial.Serial):
             if inwaiting:
                 recv = self.read_all()
                 self.recv_parse(recv)
-                return self.parse_data
             time.sleep(1)
+        # recv_data_all = self.parse_data
+        # self.parse_data = 'recv'
+        # return
 
     def recv_parse(self, data, code='utf-8'):
         if code == 'utf-8':
@@ -115,23 +121,25 @@ class ser(serial.Serial):
                 datas = binascii.hexlify(data).decode('utf-8').upper()
                 re_com = re.compile('68.*16')
                 datas = re.findall(re_com, datas)[0]
-                self.parse_data = datas
+                print_save(' '*4+'|接收:'+datas)
             except:
                 self.recv_parse(data,'ascii')
 
         if code == 'ascii':
             try:
                 datas = data.decode('ascii')
-                self.parse_data = datas
+                # self.parse_data += datas + '\n'
+                print_save(' '*4+'|接收:'+datas)
             except:
                 self.recv_parse(data,'GBK')
 
         if code == 'GBK':
             try:
                 datas = data.decode('GBK').replace('\n','').replace('\r','')
-                self.parse_data = datas
+                # self.parse_data += datas + '\n'
+                print_save(' '*4+'|接收:'+datas)
             except:
-                self.parse_data = data
+                print_save(' '*4+'|接收:'+data)
 
     def sopen(self):
         if not self.is_open:
@@ -324,7 +332,8 @@ class main():
         self.pro = pro()
         p.join()
         time_list = self.timeset.result
-        self.print_save('\n起始时间：{}，停止时间:{}\n'.format(self.parse_struct_time(
+        self.L = len(time_list)
+        print_save('\n起始时间：{}，停止时间:{}\n'.format(self.parse_struct_time(
             time_list[-1]), self.parse_struct_time(time_list[0])))
         lasttime = 0
         while True:
@@ -344,14 +353,12 @@ class main():
         print('运行结束')
         quit()
 
-    def print_save(self, data):
-        print(data)
-        save(data)
+
 
     def print_data(self, ll, p_get_time, sysj, data):
-        p_datas = '剩余次数：{a}, 设置的时间：{b}\n预计剩余时间：{c}\n[{d}], 发送: {e}'.format(
+        p_datas = '\n{xx}、剩余次数：{a} | 设置的时间：{b} | 预计剩余时间：{c}\n    |当前时间[{d}]\n    |发送:{e}'.format(xx=str(self.L-ll),
             a=str(ll), b=p_get_time, c=sysj, d=timen(), e=data)
-        self.print_save(p_datas)
+        print_save(p_datas)
 
     def print_get_time(self, x):
         try:
@@ -388,12 +395,12 @@ class main():
         return '{}时,{}分,{}秒'.format(h, m, s)
 
     def wait_recv(self):
-        data = self.ser.recv()
-        recv = '[{}], 接收: {}\n'.format(timen(), data)
-        print(recv)
-        save(recv)
-        self.recv_time = time.time()
-        time.sleep(INTERVAL - (self.recv_time - self.send_time))
+        self.ser.recv()
+        # recv = '[{}], 接收: {}\n'.format(timen(), data)
+        # print(recv)
+        # save(recv)
+        # self.recv_time = time.time()
+        # time.sleep(INTERVAL - (self.recv_time - self.send_time))
 
 if __name__ == '__main__':
     try:
