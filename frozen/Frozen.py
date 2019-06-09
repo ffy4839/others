@@ -9,6 +9,10 @@ import threading
 import serial.tools.list_ports as LP
 
 
+def print_save(data):
+    print(data)
+    save(data)
+
 def get_config(sections):
     data = {}
     config = configparser.ConfigParser()
@@ -25,9 +29,8 @@ def get_config(sections):
         config['configs']['frozen_hour'] = '24'
         config['configs']['frozen_day'] = '3'
         config['configs']['frozen_month'] = '2'
-        config['configs']['interval'] = '20'
-        config['configs']['month_frozen_day'] = 'false'
-
+        config['configs']['interval'] = '30'
+        config['configs']['month_frozen_day'] = '260000'
         with open(path + 'setConfig.ini', 'w') as f:
             config.write(f)
         input('创建成功')
@@ -37,31 +40,23 @@ def get_config(sections):
 config_data = get_config('configs')
 
 BAUDRATE = int(config_data['baudrate'])  # 波特率
-
 FROZEN_HOUR_TIMES = int(config_data['frozen_hour'])  # 小时冻结次数
 FROZEN_DAY_TIMES = int(config_data['frozen_day'])  # 天冻结次数
 FROZEN_MONTH_TIME = int(config_data['frozen_month'])  # 月冻结次数
-
 INTERVAL = int(config_data['interval'])              # 两次设置间隔
 MONTH_FROZEN_DAY = config_data['month_frozen_day']   # 月冻结时间
-
 PATH = os.getcwd() + os.path.sep + '运行记录.txt'
 
 def choose_port():
     s = lambda x:str(x).split('-')[0].strip(' ').upper()
     pl = list(LP.comports())
-
     port_list = [s(i) for i in pl]
     nb_port_list = [s(i)[3:] for i in pl]
-
     port_in = input('{}\n输入端口号：'.format(str(port_list)[1:-1].replace("'",''))).upper()
-
     if port_in in port_list:
         return port_in
-
     elif port_in in nb_port_list:
         return 'com' + port_in
-
     else:
         print('串口输入错误，请重新输入\n')
 
@@ -74,11 +69,9 @@ def save(data):
     except Exception as e:
         print('{},存储失败'.format(e))
 
-
 def quit():
     input('按任意键退出')
     sys.exit()
-
 
 def timen(d='%Y-%m-%d,%H:%M:%S'):
     return time.strftime(d, time.localtime(time.time()))
@@ -89,9 +82,9 @@ class ser(serial.Serial):
         super(ser, self).__init__()
         self.port = port
         self.open_ser()
+        self.parse_data = 'recv'
 
     def open_ser(self):
-
         self.baudrate = BAUDRATE
         self.timeout = 0.5
         self.open()
@@ -109,29 +102,44 @@ class ser(serial.Serial):
         else:
             self.open_ser()
 
-    def recv(self, times=6):
+    def recv(self, times=INTERVAL):
         self.isopened()
         self.flushInput()
         for i in range(times):
             inwaiting = self.in_waiting
             if inwaiting:
                 recv = self.read_all()
-                return self.recv_parse(recv)
+                self.recv_parse(recv)
             time.sleep(1)
+        # recv_data_all = self.parse_data
+        # self.parse_data = 'recv'
+        # return
 
-    def recv_parse(self, data):
-        try:
-            datas = binascii.hexlify(data).decode('utf-8').upper()
+    def recv_parse(self, data, code='utf-8'):
+        if code == 'utf-8':
+            try:
+                datas = binascii.hexlify(data).decode('utf-8').upper()
+                re_com = re.compile('68.*16')
+                datas = re.findall(re_com, datas)[0]
+                print_save(' '*4+'|接收:'+datas)
+            except:
+                self.recv_parse(data,'ascii')
 
-            re_com = re.compile('68.*16')
-            datas = re.findall(re_com, datas)[0]
-
-        except:
+        if code == 'ascii':
             try:
                 datas = data.decode('ascii')
+                # self.parse_data += datas + '\n'
+                print_save(' '*4+'|接收:'+datas)
             except:
-                datas = data
-        return datas
+                self.recv_parse(data,'GBK')
+
+        if code == 'GBK':
+            try:
+                datas = data.decode('GBK').replace('\n','').replace('\r','')
+                # self.parse_data += datas + '\n'
+                print_save(' '*4+'|接收:'+datas)
+            except:
+                print_save(' '*4+'|接收:'+data)
 
     def sopen(self):
         if not self.is_open:
@@ -157,7 +165,6 @@ class pro():
     def initinput(self):
         xuanze = input('{}\n{}\n{}\n{}'.format(
             '1、民用物联网', '2、商业物联网', '3、自定义', '输入序号选择：'))
-
         if xuanze == '1':
             ts = '190313010203'
             inp_a = '68 00 00 00 01 00 00 68 04 10 00 {} 16 21 C6 00 {} 3F 16'.format(
@@ -197,7 +204,6 @@ class pro():
         part_1 = self.pro[0]
         part_2 = self.pro[1]
         part_3 = self.pro[2]
-
         timenow = timen('%y%m%d%H%M%S')
         part = part_1 + timenow + part_2 + settime + part_3
         data = part + self.checkSum(part) + '16'
@@ -223,7 +229,6 @@ class setTimeList():
     def run(self, th, td, tm):
         set_time_list = []
         self.creat_formerly_time_list(15)
-
         time_list = self.last_time_list
         if th:
             while True:
@@ -247,13 +252,10 @@ class setTimeList():
                 get_time = time_list.pop()
                 get_time_mdh = get_time[2:8]
                 get_time_y = '20' + get_time[0:2]
-
                 mdh_list =self.deal_with_month_frozen(get_time_y)
-
                 if get_time_mdh in mdh_list:
                     set_time_list.append(get_time)
                     tm-=1
-
         self.result = set_time_list
         return set_time_list
 
@@ -274,20 +276,17 @@ class setTimeList():
                 mdh_list.append(add_data)
         return mdh_list
 
-
     def creat_formerly_time_list(self, years=12):
         # 创建12年零点
         struct = self.set_struct
         now_time = self.get_now_time()
         now_time = now_time[:8] + struct
-
         n = years * 365 * 24
         while n:
             self.last_time_list.append(now_time)
             self.last_hour(now_time)
             now_time = self.last_hour(now_time)
             n -= 1
-
         self.last_time_list.reverse()
 
     def last_hour(self, intime_str):
@@ -321,11 +320,9 @@ class main():
         self.recv_time = time.time()
 
     def run(self):
-
         p = threading.Thread(target=self.timeset.run, args=(FROZEN_HOUR_TIMES,
                                                             FROZEN_DAY_TIMES,
                                                             FROZEN_MONTH_TIME))
-
         p.start()
         while True:
             PORT = choose_port()  # 串口
@@ -333,21 +330,14 @@ class main():
                 break
         self.ser = ser(PORT)
         self.pro = pro()
-
         p.join()
-        # print(time.time()-xxx)
         time_list = self.timeset.result
-        # print(len(time_list))
-        #print(time_list)
-
-        self.print_save('\n起始时间：{}，停止时间:{}\n'.format(self.parse_struct_time(
+        self.L = len(time_list)
+        print_save('\n起始时间：{}，停止时间:{}\n'.format(self.parse_struct_time(
             time_list[-1]), self.parse_struct_time(time_list[0])))
-
         lasttime = 0
-
         while True:
             nowtime = time.time()
-
             if len(time_list) == 0:
                 break
             get_time = time_list.pop()  # 本次设置的时间
@@ -355,25 +345,20 @@ class main():
             data = self.pro.run(get_time)  # 数据帧
             self.ser.send(data)  # 串口发送
             ll = len(time_list)  # 剩余次数
-
             sysj = self.shengyushijian(ll, nowtime, lasttime)  # 预计剩余时间
             lasttime = nowtime
-
             self.print_data(ll, p_get_time, sysj, data)  # 打印存储数据
             self.send_time = time.time()
             self.wait_recv()  # 等待接收
-
         print('运行结束')
         quit()
 
-    def print_save(self, data):
-        print(data)
-        save(data)
+
 
     def print_data(self, ll, p_get_time, sysj, data):
-        p_datas = '剩余次数：{a}, 设置的时间：{b}\n预计剩余时间：{c}\n[{d}], 发送: {e}'.format(
+        p_datas = '\n{xx}、剩余次数：{a} | 设置的时间：{b} | 预计剩余时间：{c}\n    |当前时间[{d}]\n    |发送:{e}'.format(xx=str(self.L-ll),
             a=str(ll), b=p_get_time, c=sysj, d=timen(), e=data)
-        self.print_save(p_datas)
+        print_save(p_datas)
 
     def print_get_time(self, x):
         try:
@@ -404,21 +389,18 @@ class main():
 
     def parse_time(self, data):
         data = int(data)
-        # d = int(data/3600/24)
         h = str(int(data / 3600))
         m = str(int(data % 3600 / 60))
         s = str(int(data % 3600 % 60))
-
         return '{}时,{}分,{}秒'.format(h, m, s)
 
     def wait_recv(self):
-        recv = ''
-        data = self.ser.recv()
-        recv = '[{}], 接收: {}\n'.format(timen(), data)
-        print(recv)
-        save(recv)
-        self.recv_time = time.time()
-        time.sleep(INTERVAL - (self.recv_time - self.send_time))
+        self.ser.recv()
+        # recv = '[{}], 接收: {}\n'.format(timen(), data)
+        # print(recv)
+        # save(recv)
+        # self.recv_time = time.time()
+        # time.sleep(INTERVAL - (self.recv_time - self.send_time))
 
 if __name__ == '__main__':
     try:
@@ -426,4 +408,4 @@ if __name__ == '__main__':
         m.run()
     except Exception as e:
         print(e)
-        time.sleep(60)
+        quit()
