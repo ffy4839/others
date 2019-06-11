@@ -1,14 +1,11 @@
 import requests
 import json
-import time
 import random
-from run import *
 from lxml import etree
 from bin.func import *
 from fake_useragent import UserAgent
 UA = UserAgent()
 from multiprocessing import Pool
-from threading import Thread
 import sys
 
 

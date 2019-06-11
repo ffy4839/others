@@ -1,5 +1,5 @@
 
-from run import *
+from setting import *
 
 
 def get_time(st = '%Y-%m-%d %H:%M:%S'):
