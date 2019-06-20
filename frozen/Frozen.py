@@ -40,12 +40,14 @@ def get_config(sections):
 config_data = get_config('configs')
 
 BAUDRATE = int(config_data['baudrate'])  # 波特率
-FROZEN_HOUR_TIMES = int(config_data['frozen_hour'])  # 小时冻结次数
-FROZEN_DAY_TIMES = int(config_data['frozen_day'])  # 天冻结次数
-FROZEN_MONTH_TIME = int(config_data['frozen_month'])  # 月冻结次数
+FROZEN_HOUR_TIMES = eval(config_data['frozen_hour'])  # 小时冻结次数
+FROZEN_DAY_TIMES = eval(config_data['frozen_day'])  # 天冻结次数
+FROZEN_MONTH_TIME = eval(config_data['frozen_month'])  # 月冻结次数
 INTERVAL = int(config_data['interval'])              # 两次设置间隔
 MONTH_FROZEN_DAY = config_data['month_frozen_day']   # 月冻结时间
 PATH = os.getcwd() + os.path.sep + '运行记录.txt'
+
+
 
 def choose_port():
     s = lambda x:str(x).split('-')[0].strip(' ').upper()
@@ -121,7 +123,7 @@ class ser(serial.Serial):
                 datas = binascii.hexlify(data).decode('utf-8').upper()
                 re_com = re.compile('68.*16')
                 datas = re.findall(re_com, datas)[0]
-                print_save(' '*4+'|接收:'+datas)
+                print_save(' '*5+'|接收:'+datas)
             except:
                 self.recv_parse(data,'ascii')
 
@@ -129,7 +131,7 @@ class ser(serial.Serial):
             try:
                 datas = data.decode('ascii')
                 # self.parse_data += datas + '\n'
-                print_save(' '*4+'|接收:'+datas)
+                print_save(' '*5+'|接收:'+datas)
             except:
                 self.recv_parse(data,'GBK')
 
@@ -137,9 +139,9 @@ class ser(serial.Serial):
             try:
                 datas = data.decode('GBK').replace('\n','').replace('\r','')
                 # self.parse_data += datas + '\n'
-                print_save(' '*4+'|接收:'+datas)
+                print_save(' '*5+'|接收:'+datas)
             except:
-                print_save(' '*4+'|接收:'+data)
+                print_save(' '*5+'|接收:'+data)
 
     def sopen(self):
         if not self.is_open:
@@ -228,40 +230,33 @@ class setTimeList():
 
     def run(self, th, td, tm):
         set_time_list = []
-        self.creat_formerly_time_list(15)
-        time_list = self.last_time_list
-        if th:
-            while True:
-                if th == 0:
-                    break
-                set_time_list.append(time_list.pop())
+        time_list = self.creat_time_list()
+        for tg in time_list:
+            if th and td and tm:
+                set_time_list.append(tg)
                 th -= 1
-        if td:
-            while True:
-                if td == 0:
-                    break
-                get_time = time_list.pop()
-                if '23' + self.set_struct in get_time:
-                    set_time_list.append(get_time)
+
+            if not th and td and tm:
+                if '23' + self.set_struct in tg:
+                    set_time_list.append(tg)
                     td -= 1
-        if tm:
-            while True:
-                if tm == 0:
-                    break
-                # print(len(time_list),tm)
-                get_time = time_list.pop()
-                get_time_mdh = get_time[2:8]
-                get_time_y = '20' + get_time[0:2]
-                mdh_list =self.deal_with_month_frozen(get_time_y)
+
+            if not th and not td and tm:
+                get_time_mdh = tg[2:8]
+                get_time_y = '20' + tg[0:2]
+                mdh_list = self.deal_with_month_frozen(get_time_y)
                 if get_time_mdh in mdh_list:
-                    set_time_list.append(get_time)
-                    tm-=1
+                    set_time_list.append(tg)
+                    tm -= 1
+
+            if not th and not td and not tm:break
+
         self.result = set_time_list
         return set_time_list
 
     def deal_with_month_frozen(self,mtime):
         frozen_day = MONTH_FROZEN_DAY
-        if frozen_day == '' or frozen_day == 'false' or len(frozen_day) != 6:
+        if frozen_day == '' or frozen_day.upper() == 'false' or len(frozen_day) != 6:
             mdh_list = ('013123','022823','033123','043023','053123','063023','073123','083123','093023','103123','113023','123123')
             mdh_list_1 = ('013123','022923','033123','043023','053123','063023','073123','083123','093023','103123','113023','123123')
             if not int(mtime) % 4 and int(mtime) % 100 or not int(mtime) % 400:
@@ -276,21 +271,23 @@ class setTimeList():
                 mdh_list.append(add_data)
         return mdh_list
 
-    def creat_formerly_time_list(self, years=12):
+    def creat_time_list(self, years=15):
         # 创建12年零点
         struct = self.set_struct
         now_time = self.get_now_time()
         now_time = now_time[:8] + struct
         n = years * 365 * 24
         while n:
-            self.last_time_list.append(now_time)
-            self.last_hour(now_time)
+            res = now_time
+            # self.last_time_list.append()
+            # self.last_hour(now_time)
             now_time = self.last_hour(now_time)
             n -= 1
-        self.last_time_list.reverse()
+            yield res
+        # self.last_time_list.reverse()
 
     def last_hour(self, intime_str):
-        # 获取上一个小时的时间点
+        # 获取前一个小时的时间点
         stamptime = self.str_time2stamp_time(intime_str)
         last_stamptime = stamptime - 60 * 60
         outtime_str = self.stamp_time2str_time(last_stamptime)
@@ -332,7 +329,9 @@ class main():
         self.pro = pro()
         p.join()
         time_list = self.timeset.result
+        # print(len(time_list),time_list,'times')
         self.L = len(time_list)
+        print(self.L)
         print_save('\n起始时间：{}，停止时间:{}\n'.format(self.parse_struct_time(
             time_list[-1]), self.parse_struct_time(time_list[0])))
         lasttime = 0
@@ -351,12 +350,13 @@ class main():
             self.send_time = time.time()
             self.wait_recv()  # 等待接收
         print('运行结束')
+        self.ser.recv(60*5)
+        self.ser.close()
         quit()
 
 
-
     def print_data(self, ll, p_get_time, sysj, data):
-        p_datas = '\n{xx}、剩余次数：{a} | 设置的时间：{b} | 预计剩余时间：{c}\n    |当前时间[{d}]\n    |发送:{e}'.format(xx=str(self.L-ll),
+        p_datas = '\n{xx}、剩余次数：{a} | 设置的时间：{b} | 预计剩余时间：{c}\n     |当前时间[{d}]\n     |发送:{e}'.format(xx=str(self.L-ll),
             a=str(ll), b=p_get_time, c=sysj, d=timen(), e=data)
         print_save(p_datas)
 
@@ -396,12 +396,6 @@ class main():
 
     def wait_recv(self):
         self.ser.recv()
-        # recv = '[{}], 接收: {}\n'.format(timen(), data)
-        # print(recv)
-        # save(recv)
-        # self.recv_time = time.time()
-        # time.sleep(INTERVAL - (self.recv_time - self.send_time))
-
 if __name__ == '__main__':
     try:
         m = main()
